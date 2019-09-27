@@ -1,0 +1,761 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Scaling Up to Kotlin Coroutines</title><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui" name="viewport"><link href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/css/reveal.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/css/theme/simple.css" id="theme"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.3.0/css/font-awesome.min.css"><link href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/css/zenburn.css" rel="stylesheet"><script>var link = document.createElement( 'link' );
+link.rel = 'stylesheet';
+link.type = 'text/css';
+link.href = window.location.search.match( /print-pdf/gi ) ? "https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/css/print/pdf.css" : "https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/css/print/paper.css";
+document.getElementsByTagName( 'head' )[0].appendChild( link );</script><!--[if lt IE 9]><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/js/html5shiv.js"></script><![endif]--><link rel="stylesheet" href="./preso.css"></head><body><div class="reveal"><div class="slides"><section class="title" data-state="title"><h1>Scaling Up to Kotlin Coroutines</h1><div class="preamble"><br/><br/><div class="content" style="display: flex; text-align: center;">
+<p style="font-size: 0.5em; width: 100%"><a rel="license" href="http://creativecommons.org/licenses/by/4.0/">
+<img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png" /></a>
+<br /><span xmlns:dct="http://purl.org/dc/terms/" property="dct:title">Kotlin Coroutines</span> by
+<span xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName">Jim J. Moore</span> is licensed under
+a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.<br />
+Presentation source at <a xmlns:dct="http://purl.org/dc/terms/" href="https://github.com/jdigger/kotlin-coroutines-preso" rel="dct:source">https://github.com/jdigger/kotlin-coroutines-preso</a></p></div></div></section>
+<section id="agenda"><h2>Agenda</h2><div class="ulist"><ul><li><p>A little groundwork</p></li><li><p>Push/pull, async/concurrent, multitasking, etc.</p></li><li><p>Major Async Patterns</p></li><li><p>callbacks, functors, Promises, async/await, streams, queues, actors, reactive programming</p></li><li><p>Kotlin&#8217;s native implementations</p></li><li><p>coroutines vs threads, structured concurrency, suspension, async call styles, channels, actors, flows</p></li></ul></div></section>
+<section id="a_little_background"><h2>A little background</h2></section>
+<section id="push_pull"><h2>Push/Pull</h2></section>
+<section id="push_pull_2"><div class="paragraph"><p>To take a simple piece of pseudo-code:</p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="groovy language-groovy">series_of_items.each { item -&gt; print(item) }</code></pre></div></div>
+<div class="paragraph"><p>How does <code>"item"</code> get to the <code>"print"</code>?</p></div></section>
+<section id="pull_a_k_a_polling"><h2>Pull (a.k.a. Polling)</h2><div class="olist arabic"><ol class="arabic"><li><p>&#8220;Series, do you have another item? I&#8217;ll wait for your response.&#8221;</p></li><li><p>&#8220;You do? I&#8217;ll print what you <strong><em>yield</em></strong> to me.&#8221; Go back to step 1.</p></li><li><p>&#8220;You don&#8217;t? Ok, I&#8217;ll stop asking.&#8221;</p></li></ol></div>
+<div class="paragraph"><p><code>for</code>/<code>while</code> loops, iterators, etc. all work this way</p></div></section>
+<section id="pull_a_k_a_polling_2"><div class="paragraph"><p>As long as the &#8220;I&#8217;ll wait&#8221; part is at-or-effectively 0 time, that&#8217;s by far the simplest and most efficient approach</p></div></section>
+<section id="unknown_timing"><div class="paragraph"><p>But what if you don&#8217;t know exactly when the next value (or the indicator to finish) will come?</p></div></section>
+<section id="push_a_k_a_events"><h2>Push (a.k.a. Events)</h2><div class="olist arabic"><ol class="arabic"><li><p>&#8220;Series, call me any time you have something new for me.&#8221; Goes off to do other work.</p></li><li><p>&#8220;You&#8217;ve <strong><em>emitted</em></strong> something? I&#8217;ll print it.&#8221; When finished goes off to do other work.</p></li><li><p>&#8220;You&#8217;re telling me you&#8217;re done? I&#8217;ll do any resource cleanup.&#8221;</p></li></ol></div>
+<div class="paragraph"><p>Event buffers, messaging queues, etc. all work this way</p></div></section>
+<section id="unknown_timing_2"><div class="paragraph"><p>A lot more &#8220;machinery&#8221; is needed for handling events as well as complexities in reasoning about what&#8217;s happening.</p></div>
+<div class="paragraph"><p>But now the timing of things is no longer an issue.</p></div></section>
+<section id="async_vs_concurrent"><h2>Async vs Concurrent</h2><div class="dlist"><dl><dt class="hdlist1">Asynchronous</dt><dd><p>Perform an operation, but don&#8217;t wait for the result</p></dd><dt class="hdlist1">Concurrent</dt><dd><p>Deal with multiple tasks at the same time</p></dd></dl></div>
+<div class="admonitionblock note smaller"><table><tr><td class="icon"><i class="fa fa-info-circle" title="Note"></i></td><td class="content">There are important differences between &#8220;concurrent&#8221; and &#8220;parallel&#8221;, but in common usage (especially to an app-developer) they are synonyms, and will generally be used as-such here</td></tr></table></div></section>
+<section id="how_do_we_get_concurrency"><h2>How do we get Concurrency?</h2><div class="paragraph"><p>Any time you have a shared resource (CPU, memory, etc) you have to figure out how to do orderly hand-offs</p></div></section>
+<section id="cooperative_task_switching_vs_preemptive_multitasking"><h2>Cooperative Task-Switching vs Preemptive Multitasking</h2></section>
+<section id="cooperative_task_switching"><h2>Cooperative Task-Switching</h2><div class="paragraph"><p>Shares resources and is a &#8220;good citizen&#8221; about <strong><em>yielding</em></strong> control occasionally for others</p></div></section>
+<section id="preemptive_multitasking"><h2>Preemptive Multitasking</h2><div class="paragraph"><p>A central process enforces &#8220;fairness&#8221;</p></div></section>
+<section id="cooperative_task_switching_2"><h2>Cooperative Task-Switching</h2><div class="ulist"><ul><li><p><strong>Extremely</strong> efficient &amp; predictable</p></li><li><p>A &#8220;bad citizen&#8221; that doesn&#8217;t yield quickly enough causes resource starvation</p></li></ul></div></section>
+<section id="preemptive_multitasking_2"><h2>Preemptive Multitasking</h2><div class="ulist"><ul><li><p>Makes sure everyone gets an &#8220;equal&#8221; slice of time</p></li><li><p>Much more likely to cause shared-resource contention, requiring more mutexes/semaphores, complex re-entrant locks, etc.</p></li><li><p>Adds a lot of complexity and affects performance</p></li></ul></div></section>
+<section id="ui_event_queues"><h2>UI Event Queues</h2><div class="paragraph"><p><span class="image plain"><img src="images/Windows_3.11_workspace.png" alt="Windows 3.11 workspace" height="200px"></span> <span class="image plain"><img src="images/smartphone-325484_640.jpg" alt="smartphone 325484 640" height="200px"></span></p></div>
+<div class="paragraph"><p><strong>ALL</strong> UIs are single-threaded. No matter how many cores you have. Always have been. (Even single-core machines.)</p></div></section>
+<section id="but_surely_servers_must_be_multithreaded_right"><h2>But surely servers must be multithreaded, right?</h2></section>
+<section id="node_js"><div class="imageblock plain" style=""><img src="images/About_Node_js.png" alt="About Node js"></div></section>
+<section id="simplifying_assumptions"><div class="paragraph"><p>By restricting extremely performance sensitive things (e.g. painting the UI, or accepting network requests) to a
+single thread of (synchronous) execution that merely dispatches asynchronously, you can make a lot of
+simplifying assumptions</p></div></section>
+<section id="event_queue_process"><h2>Event Queue Process</h2><div class="olist arabic"><ol class="arabic"><li><p>Pick up the next event on the queue</p></li><li><p>Identify event</p></li><li><p>Figure out where to send it</p></li><li><p>Send it to the appropriate place</p></li><li><p>repeat</p></li></ol></div></section>
+<section id="major_async_patterns"><h2>Major Async Patterns</h2></section>
+<section id="example_async_callback"><h2>Example Async Callback</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">const server = http.createServer((req, res) =&gt; {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/plain');
+  res.end('Hello World\n');
+});
+
+server.listen(port, hostname, () =&gt; {
+  console.log(`Server running at http://${hostname}:${port}/`);
+});
+
+console.log('Server starting');</code></pre></div></div>
+<div class="paragraph"><p>The main thread of execution doesn&#8217;t wait for the server to start</p></div></section>
+<section id="event_queue"><h2>Event Queue</h2><div class="paragraph"><p>The network connection process doesn&#8217;t actually handle the request or wait for the response:
+it packages up the request, creates a place to put a response, and passes those off to another process.</p></div>
+<div class="imageblock plain" style=""><img src="images/event-queueing.svg" alt="event queueing"></div></section>
+<section id="always_callbacks"><div class="paragraph"><p><strong>ALL</strong> asynchronous code is based on callbacks</p></div></section>
+<section id="always_callbacks_2"><div class="paragraph"><p>But they are too primitive to reason about for non-trivial uses</p></div></section>
+<section id="callback_hell"><h2>Callback Hell</h2><div class="imageblock plain" style=""><img src="images/callback-hell.png" alt="callback hell"></div></section>
+<section id="callback_hell_2"><h2>Callback Hell</h2><div class="imageblock plain" style=""><img src="images/callback-hell-sections.png" alt="callback hell sections"></div></section>
+<section id="functors"><h2>Functors</h2></section>
+<section id="functors_2"><div class="paragraph"><p>In category theory, a &#8220;functor&#8221; is a map between categories.</p></div>
+<div class="paragraph"><p>In computer science, it&#8217;s effectively a function that contains a value that can be mapped to a function of another value.</p></div></section>
+<section id="simple_functor"><div class="paragraph"><p>A simple example is Java&#8217;s <code>Optional</code></p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="java language-java">                            Optional.of("something")
+                                .map(item -&gt; item + " else")
+                                .ifPresent(System.out::println);</code></pre></div></div>
+<div class="paragraph smaller"><p>It&#8217;s actually a special kind of Functor called a Monoid, but&#8230;&#8203;</p></div></section>
+<section id="when_or_how"><div class="paragraph"><p>If you have a functor you just know that you can perform a transformation on what it contains.</p></div>
+<div class="paragraph"><p>What&#8217;s really important to realize is that you don&#8217;t know/care how <strong><em>OR WHEN</em></strong> that value is populated.</p></div></section>
+<section id="promises_promises"><h2>Promises, Promises&#8230;&#8203;</h2></section>
+<section id="promises"><div class="paragraph"><p>Javascript added &#8220;Promises&#8221; to have a value</p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">            promiseToEventuallyHaveValue
+               .then((retrievedValue) =&gt; { doSomething(retrievedValue) })
+               .catch((err) =&gt; { handleError(err) })</code></pre></div></div></section>
+<section id="conceptual_promise"><h2>Conceptual Promise</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * A simple implementation of {@link Promise}.
+ *
+ * Does not provide any concurrency support, but shows how the other aspects
+ * of how a Promise works.
+ */
+class ConceptualPromise {
+
+    /**
+     * @param {executorCallback} executor - handler for when this receives a value
+     */
+    constructor(executor) {
+        // no concurrency, but support the Promise "flow"
+        executor(
+            (resolveValue) =&gt; {
+                this.resolvedValue = resolveValue
+            },
+            (rejectedValue) =&gt; {
+                this.rejectedValue = rejectedValue
+            }
+        );
+    }
+
+    /**
+     * If this contains a value, pass it to the given handler.
+     *
+     * @param {thenCallback} callback - handler for the passed value
+     * @returns {ConceptualPromise}
+     */
+    then(callback) {
+        if (this.rejectedValue !== undefined) {
+            return ConceptualPromise.rejected(this.rejectedValue)
+        } else {
+            return new ConceptualPromise((resolve, reject) =&gt; {
+                try {
+                    resolve(callback(this.resolvedValue))
+                } catch (e) {
+                    reject(e)
+                }
+            })
+        }
+    }
+
+    /**
+     * If this contains a rejection, invokes the provided callback.
+     *
+     * @param {catchCallback} callback - error handler
+     * @returns {ConceptualPromise}
+     */
+    catch(callback) {
+        if (this.rejectedValue !== undefined) {
+            const reason = callback(this.rejectedValue) || this.rejectedValue;
+            return ConceptualPromise.rejected(reason);
+        } else {
+            return ConceptualPromise.resolved(this.resolvedValue);
+        }
+    }
+
+    // *********************************
+    //
+    // STATIC METHODS
+    //
+    // *********************************
+
+    /**
+     * Create a ConceptualPromise that contains the given value.
+     *
+     * @param {*} resolvedValue - the value to resolve to
+     * @returns {ConceptualPromise}
+     */
+    static resolved(resolvedValue) {
+        return (resolvedValue instanceof ConceptualPromise) ?
+            resolvedValue :
+            new ConceptualPromise((resolve, reject) =&gt; {
+                resolve(resolvedValue)
+            });
+    }
+
+    /**
+     * Create a ConceptualPromise that is in a rejected state.
+     *
+     * @param {*} reason - the reason the for rejection
+     * @returns {ConceptualPromise}
+     */
+    static rejected(reason) {
+        return (reason instanceof ConceptualPromise) ?
+            reason :
+            new ConceptualPromise((resolve, reject) =&gt; {
+                reject(reason)
+            });
+    }
+}</code></pre></div></div></section>
+<section id="converting_callbacks_to_promises"><h2>Converting Callbacks to Promises</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * Adapter function to translate the Node callback API for creating a Server into a Promise.
+ *
+ * @returns {Promise&lt;Server&gt;}
+ */
+function createServerPromise() {
+    return new Promise((resolve, reject) =&gt; {
+        const server = http.createServer((req, res) =&gt; {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'text/plain');
+            res.end('Hello World\n');
+        });
+        resolve(server);
+    });
+}
+
+/**
+ * Adapter function to translate the Node callback API for create a connection listener for the Server into a Promise.
+ *
+ * @param {Server} server - the Server instance to create the connection listener for
+ * @param {number} port - the port to create the connection listener on
+ * @param {string} hostname - the hostname for the connection listener
+ * @returns {Promise&lt;{server, port, hostname}&gt;}
+ */
+function createServerListenerPromise(server, port, hostname) {
+    return new Promise((resolve, reject) =&gt; {
+        server.listen(port, hostname, () =&gt; {
+            resolve({server, port, hostname})
+        })
+    })
+}</code></pre></div></div></section>
+<section id="promise_for_the_node_server_example"><h2>Promise for the Node server example</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * Create and start an HTTP server on port 8089 using Promises.
+ *
+ * @returns {Promise&lt;void&gt;}
+ */
+function startPromiseServer() {
+    return createServerPromise()
+        .then((server) =&gt; {
+            return createServerListenerPromise(server, 8089, 'localhost')
+        })
+        .then(({port, hostname}) =&gt; {
+            console.log(`PromiseServer running at http://${hostname}:${port}/`);
+        });
+}</code></pre></div></div>
+<div class="paragraph smaller"><p>Each <code>.then()</code> block is the code yielding control until the value is available</p></div></section>
+<section id="java_s_promise"><div class="paragraph"><p>Quick tangent:</p></div>
+<div class="paragraph"><p>Java&#8217;s equivalent is <code>CompletableFuture</code></p></div>
+<div class="paragraph"><p>However it&#8217;s not &#8220;pure&#8221;, providing a <strong>BLOCKING</strong> <code>get()</code> method.</p></div></section>
+<section id="java_s_promise_2"><div class="paragraph"><p>Question: Why is it &#8220;okay&#8221; for there to be a blocking <code>get()</code> method on the JVM, but not in Node/Chrome?</p></div>
+<div class="paragraph"><p>It&#8217;ll have significant implications later&#8230;&#8203;</p></div></section>
+<section id="back_to_promises"><h2>Back to Promises&#8230;&#8203;</h2></section>
+<section id="a_lot_of_thens"><div class="paragraph"><p>They make it cleaner than a bunch of callbacks, but it&#8217;s still awkward&#8230;&#8203;</p></div></section>
+<section id="a_lot_of_thens_2"><div class="paragraph"><p>Let&#8217;s use some syntax sugar: <code>async</code>/<code>await</code></p></div></section>
+<section id="async_await_server"><h2>Async/Await Server</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * Create and start an HTTP server on port 8090 using async/await.
+ *
+ * @returns {Promise&lt;void&gt;}
+ */
+async function startAsyncAwaitServer() {
+    const server = await createServerPromise();
+    const {port, hostname} = await createServerListenerPromise(server, 8090, 'localhost');
+    console.log(`AsyncAwaitServer running at http://${hostname}:${port}/`);
+}</code></pre></div></div>
+<div class="paragraph"><p>Functionally, this is identical to the prior Promise-based function</p></div></section>
+<section id="async_await_server_2"><div class="paragraph"><p>The transpiler converts this to essentially the same code as before.</p></div>
+<div class="paragraph"><p>It uses the <code>await</code> keyword as a &#8220;hint&#8221; to know what chunks of code to lift out and move into <code>.then()</code> blocks.</p></div></section>
+<section id="async_await_server_3"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * Create and start an HTTP server on port 8090 using async/await.
+ *
+ * @returns {Promise&lt;void&gt;}
+ */
+async function startAsyncAwaitServer() {
+    const server = await createServerPromise();
+    const {port, hostname} = await createServerListenerPromise(server, 8090, 'localhost');
+    console.log(`AsyncAwaitServer running at http://${hostname}:${port}/`);
+}</code></pre></div></div>
+<div class="paragraph"><p>While the code &#8220;feels&#8221; like you&#8217;re blocking waiting for the <code>server</code> and <code>{port, hostname}</code> to be returned, it&#8217;s not</p></div></section>
+<section id="async_await_server_4"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="js language-js">/**
+ * Create and start an HTTP server on port 8090 using async/await.
+ *
+ * @returns {Promise&lt;void&gt;}
+ */
+async function startAsyncAwaitServer() {
+    const server = await createServerPromise();
+    const {port, hostname} = await createServerListenerPromise(server, 8090, 'localhost');
+    console.log(`AsyncAwaitServer running at http://${hostname}:${port}/`);
+}</code></pre></div></div>
+<div class="paragraph"><p>The only way you&#8217;re allowed to use <code>await</code> is in an <code>async</code> function.</p></div>
+<div class="paragraph"><p>One of the primary things <code>async</code> does is force the function to return a <code>Promise</code> so the whole thing is forced to be
+asynchronous&#8230;&#8203;</p></div></section>
+<section id="values_container"><h2>Values Container</h2><div class="paragraph"><p>A <code>Promise</code> or <code>CompletableFuture</code> is good when you need exactly one value, but what about 0? Or &#8220;n&#8221; values?</p></div>
+<div class="paragraph"><p>That&#8217;s where you move from Functors to Monads</p></div></section>
+<section id="functor"><div class="paragraph"><p>Effectively, a Functor means you have an entity with a <code>map { .. }</code> operation</p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="groovy language-groovy">                        ["a", "functional", "world"].map { it.length }
+                          ==&gt;
+                        [1, 10, 5]</code></pre></div></div>
+<div class="paragraph smaller"><p>(&#8230;&#8203;or <code>"transform"</code> or <code>"then"</code> or <code>"collect"</code> or&#8230;&#8203; But
+the most common name coming out of functional programming is <code>"map"</code>)</p></div></section>
+<section id="monad"><div class="paragraph"><p>A Monad means you can also have the <code>flatten</code> operation, where:</p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="groovy language-groovy">                    [[], ["a"], [], ["functional", "world"], []].flatten()
+                      ==&gt;
+                    ["a", "functional", "world"]</code></pre></div></div></section>
+<section id="flatmap"><div class="paragraph"><p><code>"flatten"</code> is almost always used following a <code>"map"</code>. So much so that essentially everyone just combines them into <code>"flatMap"</code></p></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">/**
+ * Applies the transformer to every element in the collection, then flattens the result.
+ */
+fun Collection&lt;T&gt;.flatMap(transformer: (T) -&gt; Collection&lt;R&gt;): Collection&lt;R&gt;</code></pre></div></div>
+<div class="paragraph smaller"><p>of course Functors and Monads have more formal definitions, but this is good enough for now</p></div></section>
+<section id="monad_implications"><h2>Monad Implications</h2><div class="paragraph"><p>Since you now have a way of taking any (monadic-) collection and apply transformations that can also change the size of that result, you can filter, expand, etc.</p></div></section>
+<section id="monad_implications_2"><h2>Monad Implications</h2><div class="paragraph"><p>And since don&#8217;t know/care how it&#8217;s populated (since it&#8217;s also a Functor),
+it can be happening concurrently, at some point in the future, coming from an infinite sequence, &#8230;&#8203;</p></div></section>
+<section id="java_streams"><h2>Java Streams</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="java language-java">Stream.of(2, 3, 4, 7, 9)
+    .filter(i -&gt; i % 2 == 0)
+    .map(i -&gt; i * 3)
+    .findFirst()
+    .ifPresent(i -&gt; System.out.println("First filtered and mapped number: " + i));
+
+// First filtered and mapped number: 6</code></pre></div></div>
+<div class="admonitionblock note smaller"><table><tr><td class="icon"><i class="fa fa-info-circle" title="Note"></i></td><td class="content">While you can use <code>parallel()</code> to get concurrency, Java Streams are pull-based and rely on the source
+synchronously yielding a new value</td></tr></table></div></section>
+<section id="let_s_revist_the_humble_queue"><h2>Let&#8217;s Revist The Humble &#8220;Queue&#8221;&#8230;&#8203;</h2><div class="imageblock plain" style=""><img src="images/simple_queue.svg" alt="simple queue"></div></section>
+<section id="queues"><div class="imageblock plain" style=""><img src="images/simple_queue.svg" alt="simple queue"></div>
+<div class="ulist"><ul><li><p>in-memory FIFO data-structures like a &#8220;deque&#8221;</p></li><li><p>dropping files into a filesystem, or rows in a table</p></li><li><p>distributed queues, from MQ-Series to Kafka</p></li><li><p>&#8230;&#8203;</p></li></ul></div></section>
+<section id="actors"><h2>Actors</h2></section>
+<section id="actor_history"><div class="paragraph"><p>The original principles were developed for Erlang and has received its modern popularity primarily with Akka</p></div></section>
+<section id="what_is_an_actor"><h2>What Is An Actor?</h2><div class="paragraph"><p>It&#8217;s a &#8220;thing&#8221; that can only be communicated with via a queue (a.k.a. mailbox) and shares no state (but can have its own private state)</p></div></section>
+<section id="actor_properties"><div class="paragraph"><p>What that means is that it can run in its own thread/process</p></div></section>
+<section id="actor_properties_2"><div class="paragraph"><p>Since there&#8217;s no shared state*, it&#8217;s literally impossible for there to be issues like deadlocks, race conditions, etc.</p></div>
+<div class="paragraph smaller"><p>(*) Besides enqueueing/dequeueing, but synchronizing that was perfected long ago</p></div></section>
+<section id="actor_properties_3"><div class="paragraph"><p>Therefore it&#8217;s trivial to be &#8220;infinitely&#8221; distributable: in-process or across the network</p></div></section>
+<section id="formal_properties_of_actors"><h2>Formal Properties of Actors</h2><div class="ulist"><ul><li><p>Designate what to do with the next message</p></li><li><p>Send messages to other actors</p></li><li><p>Create more actors</p></li></ul></div></section>
+<section id="what_to_do_with_next_message"><h2>What To Do With Next Message</h2><div class="paragraph"><p>This essentially means it can keep private state.</p></div>
+<div class="paragraph"><p>Counters, reducers (a-la map-reduce), etc.</p></div></section>
+<section id="send_messages_to_other_actors"><h2>Send Messages To Other Actors</h2><div class="paragraph"><p>Since it doesn&#8217;t share state, the only way for information to leave the Actor* is by messaging</p></div>
+<div class="paragraph smaller"><p>(*) Things like a file, databases, etc. are considered &#8220;private state&#8221; as long as the Actor is the only thing that can mutate it</p></div></section>
+<section id="create_more_actors"><h2>Create More Actors</h2><div class="paragraph"><p>Would a different Actor be better at handling this message? Create it.</p></div>
+<div class="paragraph"><p>Too much work for this Actor? Make more where the resources aren&#8217;t so constrained.</p></div></section>
+<section id="actors_illustration"><div class="imageblock plain" style=""><img src="images/actors.svg" alt="actors"></div></section>
+<section id="reactive_programming"><h2>Reactive Programming</h2></section>
+<section id="reactive_programming_2"><div class="paragraph"><p>Reactive Programming (RP) takes the &#8220;observable&#8221; pattern with callbacks, pushes that into working on a stream
+of events, and leverages Functional Programming&#8217;s (FP) monads for processing</p></div></section>
+<section id="rp_s_sweet_spot"><h2>RP&#8217;s Sweet Spot</h2><div class="paragraph"><p>The primary focus is processing streams of events</p></div>
+<div class="paragraph"><p>The major libraries provide particular support
+for merging and splitting streams, sampling, buffering, etc</p></div></section>
+<section id="hot_vs_cold_streams"><h2>Hot vs Cold Streams</h2><div class="paragraph"><p>Cold: Words from a book. Nothing happens until it&#8217;s read</p></div>
+<div class="paragraph"><p>Hot: Readings from a thermostat. Throws out values regardless of there being an observer</p></div></section>
+<section id="kotlin"><div class="imageblock plain" style=""><img src="images/kotlin-logo.png" alt="kotlin logo" height="600px"></div>
+<div class="paragraph smaller"><p>as of 1.3</p></div></section>
+<section id="kotlin_purpose"><div class="paragraph"><p>Created by JetBrains</p></div>
+<div class="paragraph"><p>Compiles to JVM/Android, JS, native</p></div></section>
+<section id="crash_course"><h2>Crash-Course</h2><div class="paragraph"><p><a href="https://jdigger.github.io/kotlin-intro-preso/" class="bare">https://jdigger.github.io/kotlin-intro-preso/</a></p></div></section>
+<section id="most_everything_is_an_expression"><h2>(Most) Everything is an expression</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun something(aParam: String): String {
+    return aParam + " is nice"
+}
+
+// exactly the same as
+
+fun something(aParam: String) = aParam + " is nice"</code></pre></div></div></section>
+<section id="extension_functions"><h2>Extension Functions</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun String.makeNice() = this + " is nice"
+"Music".makeNice()
+
+// exactly the same as
+
+fun makeNice(str: String) = str + " is nice"
+makeNice("Music")</code></pre></div></div></section>
+<section id="pushing_threads"><h2>Pushing Threads</h2></section>
+<section id="quick_bootstrap_code_for_example"><h2>Quick &#8220;Bootstrap&#8221; Code for Example</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun processLauncher(max: Int, launcher: (Int) -&gt; Unit) {
+    val start = Instant.now()
+    println("START [${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+
+    launcher(max)
+
+    val end = Instant.now()
+    println("END Duration: " + Duration.between(start, end).toMillis())
+}</code></pre></div></div></section>
+<section id="scaling_threads"><h2>Scaling Threads</h2><div class="imageblock right" style=""><img src="images/thread_scaling_5000.png" alt="thread scaling 5000"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun thread_scaling(max: Int) {
+    val threads = mutableListOf&lt;Thread&gt;()
+    for (i in 0..max) {
+        val thread = Thread {
+            Thread.sleep(10_000L) //simulate waiting 10s for a remote call
+            if (i % 1_000 == 0) {
+                println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+            }
+        }
+        threads.add(thread)
+        thread.start()
+    }
+
+    // make sure every thread has finished before returning
+    threads.forEach { thread -&gt; thread.join() }
+}
+
+fun main() {
+    processLauncher(5_000) { thread_scaling(it) }
+}</code></pre></div></div></section>
+<section id="scaling_threads_2"><h2>Scaling Threads</h2><div class="imageblock right" style=""><img src="images/thread_scaling_6000.png" alt="thread scaling 6000"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun thread_scaling(max: Int) {
+    val threads = mutableListOf&lt;Thread&gt;()
+    for (i in 0..max) {
+        val thread = Thread {
+            Thread.sleep(10_000L) //simulate waiting 10s for a remote call
+            if (i % 1_000 == 0) {
+                println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+            }
+        }
+        threads.add(thread)
+        thread.start()
+    }
+    threads.forEach { thread -&gt; thread.join() } // make sure every thread has finished before returning
+}
+
+fun main() {
+    processLauncher(6_000) { thread_scaling(it) }
+}</code></pre></div></div></section>
+<section id="scaling_coroutines"><h2>Scaling Coroutines</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun coroutine_main_scaling(max: Int) {
+    runBlocking {
+        for (i in 0..max) {
+            launch {
+                delay(10_000L) //simulate waiting 10s for a remote call
+                if (i % 1_000 == 0) {
+                    println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+                }
+            }
+        }
+    }
+}
+
+fun main() {
+    processLauncher(5_000) { coroutine_main_scaling(it) }
+}</code></pre></div></div>
+<div class="paragraph smaller"><p>The <code>runBlocking</code> provides &#8220;scoped concurrency&#8221; so the <code>.join()</code> calls aren&#8217;t needed, <code>launch</code> does
+a &#8220;fire and forget&#8221; essentially like the creation and start of the threads, and <code>delay</code> does the obvious</p></div></section>
+<section id="scaling_coroutines_2"><h2>Scaling Coroutines</h2><div class="imageblock right" style=""><img src="images/coroutine_scaling_5000.png" alt="coroutine scaling 5000"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun coroutine_main_scaling(max: Int) {
+    runBlocking {
+        for (i in 0..max) {
+            launch {
+                delay(10_000L) //simulate waiting 10s for a remote call
+                if (i % 1_000 == 0) {
+                    println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+                }
+            }
+        }
+    }
+}
+
+fun main() {
+    processLauncher(5_000) { coroutine_main_scaling(it) }
+}</code></pre></div></div></section>
+<section id="scaling_coroutines_3"><h2>Scaling Coroutines</h2><div class="imageblock right" style=""><img src="images/coroutine_scaling_5000000.png" alt="coroutine scaling 5000000"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun coroutine_main_scaling(max: Int) {
+    runBlocking {
+        for (i in 0..max) {
+            launch {
+                delay(10_000L) //simulate waiting 10s for a remote call
+                if (i % 1_000_000 == 0) {
+                    println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+                }
+            }
+        }
+    }
+}
+
+fun main() {
+    processLauncher(5_000_000) { coroutine_main_scaling(it) }
+}</code></pre></div></div></section>
+<section id="scaling_coroutines_4"><h2>Scaling Coroutines</h2><div class="imageblock right" style=""><img src="images/coroutine_scaling_IO_5000.png" alt="coroutine scaling IO 5000"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun coroutine_IO_scaling(max: Int) {
+    runBlocking {
+        for (i in 0..max) {
+            launch(Dispatchers.IO) {
+                delay(10_000L) //simulate waiting 10s for a remote call
+                if (i % 1_000 == 0) {
+                    println("[${Thread.currentThread().name}] - ${Thread.activeCount()} active")
+                }
+            }
+        }
+    }
+}
+
+fun main() {
+    processLauncher(5_000) { coroutine_IO_scaling(it) }
+}</code></pre></div></div></section>
+<section id="let_s_dissect_this_a_bit"><h2>Let&#8217;s dissect this a bit&#8230;&#8203;</h2></section>
+<section id="dissect_runblocking"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">                       runBlocking { /* "this" is a new CoroutineScope */ }</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">public fun &lt;T&gt; runBlocking(context: CoroutineContext = EmptyCoroutineContext,
+                           block: suspend CoroutineScope.() -&gt; T): T {
+    val currentThread = Thread.currentThread()
+    // ...</code></pre></div></div>
+<div class="paragraph"><p>Creates a new <code>CoroutineScope</code> attached to the current thread, and passes that as the <code>"this"</code> to the (no-arg) function</p></div>
+<div class="paragraph"><p>Acts as the &#8220;sync &#8594; async&#8221; barrier</p></div></section>
+<section id="coroutinescope"><h2>CoroutineScope</h2><div class="paragraph"><p>Keeps track of any child scopes</p></div>
+<div class="ulist"><ul><li><p>All coroutines must be created in the context of a CoroutineScope</p></li><li><p>Waits for all child scopes to complete before it completes</p></li><li><p>If you cancel the parent, all its children are cancelled</p></li></ul></div></section>
+<section id="dissect_launch"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">                       launch { /* "this" is a new CoroutineScope */ }</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">public fun CoroutineScope.launch(
+    context: CoroutineContext = EmptyCoroutineContext,
+    start: CoroutineStart = CoroutineStart.DEFAULT,
+    block: suspend CoroutineScope.() -&gt; Unit
+): Job {</code></pre></div></div>
+<div class="ulist"><ul><li><p>Can only be called in the context of a <code>CoroutineScope</code></p></li><li><p>If you don&#8217;t specify a context (e.g. <code>Dispatchers.IO</code>) then it inherits the caller&#8217;s context</p></li><li><p>Creates a new child CoroutineScope and uses that as the &#8220;this&#8221; for the passed in function</p></li><li><p>Returns a <code>Job</code> that is similar to a Thread reference (for <code>.join()</code>, <code>.cancel()</code>, etc)</p></li></ul></div></section>
+<section id="dissect_delay"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">                                     delay(5_000)</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">suspend fun delay(timeMillis: Long) {</code></pre></div></div>
+<div class="paragraph"><p>Yields control of the current execution until the time has passed</p></div></section>
+<section id="what_s_with_code_suspend_code"><h2>What&#8217;s with <code>suspend</code>?</h2></section>
+<section id="what_s_with_code_suspend_code_2"><div class="paragraph"><p>That&#8217;s what marks a function as being a coroutine</p></div></section>
+<section id="what_s_with_code_suspend_code_3"><div class="paragraph"><p>It tells the compiler to &#8220;deconstruct&#8221; the code in the function along certain &#8220;seams&#8221;</p></div>
+<div class="paragraph"><p>Conceptually it happens in ways very similar to what happens for an <code>async</code> function in JavaScript
+(though the implementation is significantly different)</p></div></section>
+<section id="continuations"><h2>Continuations</h2><div class="paragraph"><p>At the byte-code level the function signature is rewritten to pass a Continuation in and out, and at those potential
+suspension points in the function it aggressively yields control of the current process</p></div>
+<div class="paragraph smaller"><p>OpenJDK has a proposal, <a href="https://cr.openjdk.java.net/~rpressler/loom/Loom-Proposal.html">Project Loom</a> to add this
+kind of support explicitly to Java</p></div></section>
+<section id="continuations_2"><div class="paragraph"><p>This gives a &#8220;re-entrant&#8221; capability to the function</p></div>
+<div class="paragraph"><p>This provides an extremely light-weight way to not only &#8220;pause&#8221;
+the function, but to pass the state around to other threads</p></div></section>
+<section id="comparision_of_async_call_styles"><h2>Comparision of Async Call Styles</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">// classic blocking
+fun sendEmail(emailArgs: EmailArgs): EmailResult
+
+// Node-ish callback; quickly turns into callback hell
+fun sendEmail(emailArgs: EmailArgs, callback: (Throwable?, EmailResult?) -&gt; Unit)
+
+// Future/Promise; good convention is to use the *Async to remind caller to do the `await`
+fun sendEmailAsync(emailArgs: EmailArgs): Deferred&lt;EmailResult&gt;
+
+// Coroutine
+suspend fun sendEmail(emailArgs: EmailArgs): EmailResult</code></pre></div></div></section>
+<section id="usage_of_async_call_styles"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun largerBusinessProcessAsync(): Deferred&lt;Unit&gt; = GlobalScope.async {
+    // a lot of code here, then somewhere inside
+    val emailResult = sendEmailAsync(emailArgs).await()
+    // something else goes on after that
+}
+
+suspend fun largerBusinessProcess() {
+    // a lot of code here, then somewhere inside
+    val emailResult = sendEmail(emailArgs)
+    // something else goes on after that
+}</code></pre></div></div>
+<div class="admonitionblock warning"><table><tr><td class="icon"><i class="fa fa-warning" title="Warning"></i></td><td class="content">What happens if you forget to call <code>await()</code>?</td></tr></table></div>
+<div class="admonitionblock note"><table><tr><td class="icon"><i class="fa fa-info-circle" title="Note"></i></td><td class="content">As much as possible, code calling asynchronous code should be async itself</td></tr></table></div>
+<div class="paragraph smaller"><p>This uses <code>GlobalScope</code> for example simplicity. For real code that is almost certainly a <strong>BAD</strong> idea.</p></div></section>
+<section id="kotlin_cheats"><h2>Kotlin &#8220;Cheats&#8221;</h2><div class="paragraph"><p>Functionally, there&#8217;s no real difference between calling a function with <code>.await()</code> and using a coroutine</p></div>
+<div class="paragraph"><p>But the Kotlin compiler does a lot of optimizations for the platform</p></div>
+<div class="paragraph smaller"><p>In fact, <code>.await()</code> is implemented as a coroutine, and <code>async</code> leverages scoped-concurrency</p></div></section>
+<section id="trivial_example_of_good_use_of_await"><h2>Trivial Example of Good Use of Await</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">// simulate making 100 remote calls that take 1 sec each; total time is just over 1 sec
+suspend fun spreadSum(): Int = coroutineScope {
+    val deferredCalls: List&lt;Deferred&lt;Int&gt;&gt; = (1..100).map {
+        async {
+            delay(1000) // remote service call
+            2
+        }
+    }
+    deferredCalls
+        .map { deferred -&gt; deferred.await() }
+        .sum()
+}</code></pre></div></div></section>
+<section id="channels"><h2>Channels</h2></section>
+<section id="channels_2"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">interface SendChannel&lt;T&gt; {
+    suspend fun send(value: T)
+    fun close(cause: Throwable? = null): Boolean
+    // ...
+}
+
+interface ReceiveChannel&lt;T&gt; {
+    suspend fun receive(): T
+    operator fun iterator(): ChannelIterator&lt;E&gt;
+    fun cancel(cause: CancellationException? = null)
+    // ...
+}
+
+interface Channel&lt;E&gt; : SendChannel&lt;E&gt;, ReceiveChannel&lt;E&gt;</code></pre></div></div></section>
+<section id="fibonacci"><h2>Fibonacci</h2><div class="paragraph"><p>0,1,1,2,3,5,8,13,21,34,&#8230;&#8203;</p></div></section>
+<section id="classic_fp_style_sequence"><h2>Classic FP Style Sequence</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun CoroutineScope.fibonacci(): ReceiveChannel&lt;Int&gt; = produce {
+    var x = 0
+    var y = 1
+    while (true) {
+        send(x)
+        val next = x + y
+        x = y
+        y = next
+    }
+}
+
+fun main() = runBlocking {
+    for (i in fibonacci().take(10)) {
+        println("fib: $i")
+    }
+}</code></pre></div></div></section>
+<section id="basic_go_routine_style"><h2>Basic Go-Routine Style</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">suspend fun fibonacci(n: Int, channel: SendChannel&lt;Int&gt;) {
+    var x = 0
+    var y = 1
+    for (i in 0 until n) {
+        channel.send(x)
+        val next = x + y
+        x = y
+        y = next
+    }
+    channel.close()
+}
+
+fun main() = runBlocking {
+    val fsc = Channel&lt;Int&gt;() // akin to a Go Channel
+    launch { fibonacci(10, fsc) } // akin to a Go Routine
+    for (i in fsc) {
+        println("fib: $i")
+    }
+}</code></pre></div></div></section>
+<section id="selecting_among_multiple_channels"><h2>Selecting Among Multiple Channels</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">suspend fun fibonacci(c: SendChannel&lt;Int&gt;, quit: ReceiveChannel&lt;Int&gt;) {
+    var x = 0; var y = 1
+    whileSelect {
+        c.onSend(x) {
+            val next = x + y
+            x = y; y = next
+            true // continue while loop
+        }
+        quit.onReceive {
+            println("quit")
+            false // break while loop
+        }
+    }
+}
+fun main() = runBlocking {
+    val sfsc = Channel&lt;Int&gt;()
+    val quitChannel = Channel&lt;Int&gt;()
+    launch {
+        for (i in 0 until 10) {
+            println("fib: ${sfsc.receive()}")
+        }
+        quitChannel.send(0)
+    }
+    fibonacci(sfsc, quitChannel)
+}</code></pre></div></div></section>
+<section id="fanning_out"><h2>Fanning Out</h2><div class="imageblock right" style=""><img src="images/channel_fanout.png" alt="channel fanout"></div>
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">suspend fun sharing_a_channel() = coroutineScope {
+    val channel = Channel&lt;String&gt;()
+    for (i in 1..9)
+        launch(Dispatchers.Default + CoroutineName("launch$i")) {
+            for (str in channel) {
+                println("${Thread.currentThread().name} - $str")
+            }
+        }
+
+    for (letter in 'a'..'z') {
+        channel.send(letter.toString())
+    }
+    channel.close()
+}</code></pre></div></div></section>
+<section id="shared_mutable_state"><div class="paragraph"><p>Let Actors handle shared mutable state</p></div>
+<div class="paragraph smaller"><p>in addition to being easier than doing locking right, it&#8217;s also more performant</p></div></section>
+<section id="actors_2"><h2>Actors</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">sealed class CounterMsg
+object IncCounter : CounterMsg() // one-way message to increment counter
+class GetCounter(val response: CompletableDeferred&lt;Int&gt;) : CounterMsg() // a request with reply
+
+fun main() = runBlocking {
+    val counterChannel: SendChannel&lt;CounterMsg&gt; = actor {
+        var counter = 0 // actor state
+        for (msg in this.channel) { // iterate over incoming messages
+            when (msg) {
+                is IncCounter -&gt; counter++
+                is GetCounter -&gt; msg.response.complete(counter)
+            }
+        }
+    }
+
+    for (i in 1..100) {
+        counterChannel.send(IncCounter)
+    }
+
+    val response = CompletableDeferred&lt;Int&gt;()
+    counterChannel.send(GetCounter(response))
+    println("Counter = ${response.await()}")
+    counterChannel.close() // shutdown the actor
+}</code></pre></div></div></section>
+<section id="flows"><h2>Flows</h2><div class="paragraph"><p>Flows are essentially Streams that use a Channel under the covers</p></div>
+<div class="paragraph"><p>By doing so, you get very light-weight &#8220;reactive programming&#8221; capabilities</p></div></section>
+<section id="complex_ish_flow_example"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun main(): Unit = runBlocking {
+    val mainContext = coroutineContext + CoroutineName("main-fun")
+
+    val baseFlow = flow {
+        for (i in 1..9) {
+            emit(i)
+            delay(200)
+        }
+    }
+
+    baseFlow
+        .sample(500) // every 500ms open the sluice for another item
+        .map { item -&gt; "$item - [${Thread.currentThread().name}]" }
+        .flowOn(Dispatchers.Default + CoroutineName("proc-int-flow"))
+        .collect {
+            withContext(mainContext) {
+                println("printing on [${Thread.currentThread().name}] -&gt; $it")
+            }
+        }
+}</code></pre></div></div>
+<div class="imageblock plain" style=""><img src="images/flowOn.png" alt="flowOn"></div></section>
+<section id="hopefully_that_gives_you_the_context_to_learn_more"><h2>Hopefully that gives you the context to learn more</h2></section>
+<section id="what_about"><h2>What About&#8230;&#8203; ?</h2><div class="ulist"><ul><li><p>error handling</p></li><li><p>integration with XXX (RxJava, Akka, Kafka, etc.)</p></li><li><p>cross-language support (e.g., JLS)</p></li><li><p>etc etc</p></li></ul></div></section>
+<section id="more_information"><h2>More Information</h2><div class="ulist twocol"><ul class="twocol"><li><p><a href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md" class="bare">https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md</a> - a little dated, the definitive guide to
+the reasoning and implementation behind Coroutines</p></li><li><p><a href="https://kotlinlang.org/docs/reference/coroutines/channels.html" class="bare">https://kotlinlang.org/docs/reference/coroutines/channels.html</a></p></li><li><p><a href="https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f" class="bare">https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f</a></p></li><li><p><a href="https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9" class="bare">https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9</a></p></li><li><p><a href="https://kotlinexpertise.com/kotlin-coroutines-concurrency/" class="bare">https://kotlinexpertise.com/kotlin-coroutines-concurrency/</a></p></li></ul></div></section>
+<section id="images"><h2>Images</h2><div class="ulist"><ul><li><p><a href="https://www.vecteezy.com/vector-art/138681-cute-bright-buho-icons">Cute Bright Buho Icons</a></p></li><li><p><a href="https://pixabay.com/photos/smartphone-samsung-galaxy-s4-mini-325484/">Samsung Galaxy S4</a></p></li><li><p><a href="https://en.wikipedia.org/wiki/File:Windows_3.11_workspace.png">Windows 3.11 screenshot</a></p></li></ul></div></section></div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/js/head.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/js/reveal.js"></script><script>// See https://github.com/hakimel/reveal.js#configuration for a full list of configuration options
+Reveal.initialize({
+  // Display controls in the bottom right corner
+  controls: true,
+  // Display a presentation progress bar
+  progress: true,
+  // Set a per-slide timing for speaker notes, null means none
+  defaultTiming: null,
+  // Display the page number of the current slide
+  slideNumber: false,
+  // Push each slide change to the browser history
+  history: true,
+  // Enable keyboard shortcuts for navigation
+  keyboard: true,
+  // Enable the slide overview mode
+  overview: true,
+  // Vertical centering of slides
+  center: true,
+  // Enables touch navigation on devices with touch input
+  touch: true,
+  // Loop the presentation
+  loop: false,
+  // Change the presentation direction to be RTL
+  rtl: false,
+  // Randomizes the order of slides each time the presentation loads
+  shuffle: false,
+  // Turns fragments on and off globally
+  fragments: true,
+  // Flags if the presentation is running in an embedded mode,
+  // i.e. contained within a limited portion of the screen
+  embedded: false,
+  // Flags if we should show a help overlay when the questionmark
+  // key is pressed
+  help: true,
+  // Flags if speaker notes should be visible to all viewers
+  showNotes: false,
+  // Global override for autolaying embedded media (video/audio/iframe)
+  // - null: Media will only autoplay if data-autoplay is present
+  // - true: All media will autoplay, regardless of individual setting
+  // - false: No media will autoplay, regardless of individual setting
+  autoPlayMedia: null,
+  // Number of milliseconds between automatically proceeding to the
+  // next slide, disabled when set to 0, this value can be overwritten
+  // by using a data-autoslide attribute on your slides
+  autoSlide: 0,
+  // Stop auto-sliding after user input
+  autoSlideStoppable: true,
+  // Enable slide navigation via mouse wheel
+  mouseWheel: false,
+  // Hides the address bar on mobile devices
+  hideAddressBar: true,
+  // Opens links in an iframe preview overlay
+  previewLinks: false,
+  // Theme (e.g., beige, black, league, night, serif, simple, sky, solarized, white)
+  // NOTE setting the theme in the config no longer works in reveal.js 3.x
+  //theme: Reveal.getQueryHash().theme || 'simple',
+  // Transition style (e.g., none, fade, slide, convex, concave, zoom)
+  transition: Reveal.getQueryHash().transition || 'none',
+  // Transition speed (e.g., default, fast, slow)
+  transitionSpeed: 'default',
+  // Transition style for full page slide backgrounds (e.g., none, fade, slide, convex, concave, zoom)
+  backgroundTransition: 'fade',
+  // Number of slides away from the current that are visible
+  viewDistance: 3,
+  // Parallax background image (e.g., "'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg'")
+  parallaxBackgroundImage: '',
+  // Parallax background size in CSS syntax (e.g., "2100px 900px")
+  parallaxBackgroundSize: '',
+
+  // The "normal" size of the presentation, aspect ratio will be preserved
+  // when the presentation is scaled to fit different resolutions. Can be
+  // specified using percentage units.
+  width: "1200",
+  height: "768",
+
+  // Factor of the display size that should remain empty around the content
+  margin: 0.1,
+
+  // Bounds for smallest/largest possible scale to apply to content
+  minScale: 0.2,
+  maxScale: 2.0,
+
+  // Optional libraries used to extend on reveal.js
+  dependencies: [
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/js/classList.js', condition: function() { return !document.body.classList; } },
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/plugin/zoom-js/zoom.js', async: true },
+      { src: 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/plugin/notes/notes.js', async: true }
+  ]
+});</script></body></html>
