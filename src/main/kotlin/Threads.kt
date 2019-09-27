@@ -83,8 +83,8 @@ suspend fun spreadSum(): Int = coroutineScope {
         }
     }
     deferredCalls
-            .map { deferred -> deferred.await() }
-            .sum()
+        .map { deferred -> deferred.await() }
+        .sum()
 }
 
 
@@ -98,8 +98,8 @@ suspend fun spreadSum_force_single_thread(): Int = coroutineScope {
         }
     }
     deferredCalls
-            .map { deferred -> deferred.await() }
-            .sum()
+        .map { deferred -> deferred.await() }
+        .sum()
 }
 
 

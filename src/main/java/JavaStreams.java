@@ -14,16 +14,16 @@ public class JavaStreams {
 
     private static void streams_are_monads() {
         Stream.of(2, 3, 4, 7, 9)
-                .filter(i -> i % 2 == 0)
-                .map(i -> i * 3)
-                .findFirst()
-                .ifPresent(i -> System.out.println("First filtered and mapped number: " + i));
+            .filter(i -> i % 2 == 0)
+            .map(i -> i * 3)
+            .findFirst()
+            .ifPresent(i -> System.out.println("First filtered and mapped number: " + i));
 
         Stream.of(2, 3, 4, 7, 9)
-                .flatMap(i -> (i % 2 == 0) ? Stream.of(i) : Stream.empty())  // functionally the same as filter
-                .map(i -> i * 3)
-                .findFirst()
-                .ifPresent(i -> System.out.println("First filtered and mapped number: " + i));
+            .flatMap(i -> (i % 2 == 0) ? Stream.of(i) : Stream.empty())  // functionally the same as filter
+            .map(i -> i * 3)
+            .findFirst()
+            .ifPresent(i -> System.out.println("First filtered and mapped number: " + i));
     }
 
     private static void lists_are_multi_use() {

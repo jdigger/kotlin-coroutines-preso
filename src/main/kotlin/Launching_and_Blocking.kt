@@ -93,37 +93,3 @@ suspend fun launchWaiter(funName: String, launchContext: CoroutineContext, lastT
 //    val oldVal = lastTime.getAndSet(newVal)
 //    println("${newVal - oldVal} <<<< $funName - ${Thread.currentThread().name}")
 //}
-
-
-
-// ****************************
-
-
-
-
-
-/*
-/**
- * Creates a "fire and forget" channel to send [RelatedDirectories] for flattening, then scanning, then rebalancing.
- */
-private fun CoroutineScope.createRelatedDirectoriesChannel(
-    flattenScanRebalancer: FlattenScanRebalancer
-): SendChannel<RelatedDirectories> {
-    val relatedDirectoriesChannel = Channel<RelatedDirectories>()
-
-    // Create a listener for the channel.
-    // The outer CoroutineScope won't finish until this is completed.
-    repeat(Runtime.getRuntime().availableProcessors()) {
-        launch {
-            for (relatedDirs in relatedDirectoriesChannel) {
-                // Create jobs to handle the processing.
-                // The "launch" won't complete until all these jobs have completed.
-                flattenScanRebalancer.flattenScanRebalanceAsync(this, relatedDirs)
-            }
-        }
-    }
-
-    return relatedDirectoriesChannel
-}
-
- */

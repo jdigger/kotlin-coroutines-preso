@@ -22,7 +22,8 @@
     "watch": "node asciidoctor-revealjs.js",
     "lint": "eslint *.js",
     "lint-fix": "eslint --fix *.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "ghpages": "node publish.js"
   },
   "repository": {
     "type": "git",

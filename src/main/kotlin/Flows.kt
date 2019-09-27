@@ -3,7 +3,7 @@
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-fun main(): Unit = runBlocking {
+fun main() = runBlocking {
     val mainContext = coroutineContext + CoroutineName("main-fun")
 
     val baseFlow = flow {

@@ -28,11 +28,11 @@ Presentation source at <a xmlns:dct="http://purl.org/dc/terms/" href="https://gi
 == Agenda
 
 * A little groundwork
-  * Push/pull, async/concurrent, multitasking, etc.
+  ** Push/pull, async/concurrent, multitasking, etc.
 * Major Async Patterns
-  * callbacks, functors, Promises, async/await, streams, queues, actors, reactive programming
+  ** callbacks, functors, Promises, async/await, streams, queues, actors, reactive programming
 * Kotlin's native implementations
-  * coroutines vs threads, structured concurrency, suspension, async call styles, channels, actors, flows
+  ** coroutines vs threads, structured concurrency, suspension, async call styles, channels, actors, flows
 
 == A little background
 
@@ -90,7 +90,7 @@ Asynchronous:: Perform an operation, but don't wait for the result
 Concurrent:: Deal with multiple tasks at the same time
 
 [.smaller]
-NOTE: There are important differences between "`concurrent`" and "`parallel`", but in common usage (especially to an app-developer) they are synonyms, and will generally be used as-such here
+NOTE: There are important differences between "`concurrent`" and "`parallel`", but this is good enough for now
 
 
 
@@ -584,7 +584,7 @@ Stream.of(2, 3, 4, 7, 9)
 --
 
 [.smaller]
-NOTE: While you can use `parallel()` to get concurrency, Java Streams are pull-based and rely on the source
+NOTE: While you can use `parallel()` to get some parallelism, Java Streams are pull-based and rely on the source
 synchronously yielding a new value
 
 
@@ -613,7 +613,7 @@ The original principles were developed for Erlang and has received its modern po
 
 == What Is An Actor?
 
-It's a "`thing`" that can only be communicated with via a queue (a.k.a. mailbox) and shares no state (but can have its own private state)
+It's a "`thing`" that can only be communicated with via a "`mailbox`" (a.k.a. queue) and shares no state (but can have its own private state)
 
 
 [%notitle]
@@ -735,7 +735,7 @@ fun something(aParam: String) = aParam + " is nice"
 fun String.makeNice() = this + " is nice"
 "Music".makeNice()
 
-// exactly the same as
+// compiles to the same as
 
 fun makeNice(str: String) = str + " is nice"
 makeNice("Music")
@@ -806,7 +806,9 @@ fun thread_scaling(max: Int) {
         threads.add(thread)
         thread.start()
     }
-    threads.forEach { thread -> thread.join() } // make sure every thread has finished before returning
+
+    // make sure every thread has finished before returning
+    threads.forEach { thread -> thread.join() }
 }
 
 fun main() {
@@ -917,7 +919,37 @@ fun main() {
 --
 
 
-== Let's dissect this a bit...
+== Dispatchers
+
+image::dispatcher.svg[]
+
+== Primary Dispatchers
+
+== Dispatchers.Default
+
+Appropriate choice for compute-intensive coroutines that consume CPU resources
+
+Pool size is number of CPU cores
+
+== Dispatchers.IO
+
+Uses a shared pool of on-demand created threads and is designed for offloading of IO-intensive *_blocking_*  operations
+(like file I/O and blocking socket I/O)
+
+
+== Dispatchers.Main
+
+Used to put tasks on the UI thread on Android, Swing and JavaFX
+
+[.smaller]
+Confusingly, it does not put things on the "`main`" JVM thread
+
+== "`Custom`" Dispatchers
+
+* Private thread pools can be created with `newSingleThreadContext()` and `newFixedThreadPoolContext(..)`
+* An arbitrary `java.util.concurrent.Executor` can be converted to a dispatcher with `.asCoroutineDispatcher()`
+
+== Let's dissect the example a bit...
 
 [%notitle]
 == Dissect runBlocking
@@ -941,7 +973,7 @@ Acts as the "`sync -> async`" barrier
 
 == CoroutineScope
 
-Keeps track of any child scopes
+Keeps track of coroutines
 
 * All coroutines must be created in the context of a CoroutineScope
 * Waits for all child scopes to complete before it completes
@@ -1001,7 +1033,9 @@ That's what marks a function as being a coroutine
 It tells the compiler to "`deconstruct`" the code in the function along certain "`seams`"
 
 Conceptually it happens in ways very similar to what happens for an `async` function in JavaScript
-(though the implementation is significantly different)
+
+[.smaller]
+(though the implementation is *_significantly_* different)
 
 
 == Continuations
@@ -1010,7 +1044,7 @@ At the byte-code level the function signature is rewritten to pass a Continuatio
 suspension points in the function it aggressively yields control of the current process
 
 [.smaller]
-OpenJDK has a proposal, https://cr.openjdk.java.net/~rpressler/loom/Loom-Proposal.html[Project Loom] to add this
+OpenJDK has a proposal, https://cr.openjdk.java.net/~rpressler/loom/Loom-Proposal.html[Project Loom], to add this
 kind of support explicitly to Java
 
 [%notitle]
@@ -1120,7 +1154,7 @@ interface Channel<E> : SendChannel<E>, ReceiveChannel<E>
 
 0,1,1,2,3,5,8,13,21,34,...
 
-== Classic FP Style Sequence
+== Classic FP-Style Sequence
 
 [source,kotlin]
 --
@@ -1207,7 +1241,7 @@ image::channel_fanout.png[role=right]
 
 [source,kotlin]
 --
-suspend fun sharing_a_channel() = coroutineScope {
+fun main() = runBlocking<Unit> {
     val channel = Channel<String>()
     for (i in 1..9)
         launch(Dispatchers.Default + CoroutineName("launch$i")) {
@@ -1239,9 +1273,9 @@ sealed class CounterMsg
 object IncCounter : CounterMsg() // one-way message to increment counter
 class GetCounter(val response: CompletableDeferred<Int>) : CounterMsg() // a request with reply
 
-fun main() = runBlocking {
+fun main() = runBlocking<Unit> {
     val counterChannel: SendChannel<CounterMsg> = actor {
-        var counter = 0 // actor state
+        var counter = 0 // private actor state
         for (msg in this.channel) { // iterate over incoming messages
             when (msg) {
                 is IncCounter -> counter++
@@ -1273,7 +1307,7 @@ By doing so, you get very light-weight "`reactive programming`" capabilities
 
 [source,kotlin]
 --
-fun main(): Unit = runBlocking {
+fun main() = runBlocking {
     val mainContext = coroutineContext + CoroutineName("main-fun")
 
     val baseFlow = flow {
@@ -1312,17 +1346,19 @@ image::flowOn.png[role=plain]
 
 == More Information
 
-[twocol]
-* https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md - a little dated, the definitive guide to
-the reasoning and implementation behind Coroutines
-* https://kotlinlang.org/docs/reference/coroutines/channels.html
-* https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f
-* https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9
-* https://kotlinexpertise.com/kotlin-coroutines-concurrency/
+[.smaller]
+* https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md[Coroutines Proposal] - a little dated,
+the definitive guide to the reasoning and implementation behind Coroutines
+* https://kotlinlang.org/docs/reference/coroutines/channels.html[Channels Reference]
+* https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f[Kotlin: Diving in to Coroutines
+and Channels] - well written article using the classic barista example
+* https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9[Roman Elizarov explaining the design of Flows]
+* https://www.youtube.com/watch?v=a3agLJQ6vt8&t=1442s[Kotlin Coroutines In Practice video by Roman Elizarov]
 
 
-== Images
+== Image Credits
 
+[.smaller]
 * https://www.vecteezy.com/vector-art/138681-cute-bright-buho-icons[Cute Bright Buho Icons]
 * https://pixabay.com/photos/smartphone-samsung-galaxy-s4-mini-325484/[Samsung Galaxy S4]
 * https://en.wikipedia.org/wiki/File:Windows_3.11_workspace.png[Windows 3.11 screenshot]

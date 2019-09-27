@@ -25,17 +25,17 @@ To generate a new slide site and watch for changes
 $ npm run watch
 --
 
-To start a server listening on http://localhost:5050/
+To start a server listening on http://localhost:8080/
 [source,bash]
 --
 $ npm run start
 --
 
-// To publish to GitHub Pages:
-// [source,bash]
-// --
-// $ ./gradlew asciidoctor gitPublishPush
-// --
+ To publish to GitHub Pages:
+[source,bash]
+--
+$ npm run ghpages
+--
 
 
 ## Uses

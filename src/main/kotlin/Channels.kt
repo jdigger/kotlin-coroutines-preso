@@ -1,7 +1,11 @@
 @file:Suppress("EXPERIMENTAL_API_USAGE", "FunctionName")
 
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.channels.produce
+import kotlinx.coroutines.channels.take
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.whileSelect
 
 
@@ -46,53 +50,12 @@ suspend fun fibonacci_select(c: SendChannel<Int>, quit: ReceiveChannel<Int>) {
     }
 }
 
-sealed class CounterMsg
-object IncCounter : CounterMsg() // one-way message to increment counter
-class GetCounter(val response: CompletableDeferred<Int>) : CounterMsg() // a request with reply
-
-suspend fun counter_actor() = coroutineScope {
-    val counterChannel: SendChannel<CounterMsg> = actor {
-        var counter = 0 // actor state
-        for (msg in this.channel) { // iterate over incoming messages
-            when (msg) {
-                is IncCounter -> counter++
-                is GetCounter -> msg.response.complete(counter)
-            }
-        }
-    }
-
-    for (i in 1..100) {
-        counterChannel.send(IncCounter)
-    }
-
-    val response = CompletableDeferred<Int>()
-    counterChannel.send(GetCounter(response))
-    println("Counter = ${response.await()}")
-    counterChannel.close() // shutdown the actor
-}
-
-
-suspend fun sharing_a_channel() = coroutineScope {
-    val channel = Channel<String>()
-    for (i in 1..9)
-        launch(Dispatchers.Default + CoroutineName("launch$i")) {
-            for (str in channel) {
-                println("${Thread.currentThread().name} - $str")
-            }
-        }
-    for (letter in 'a'..'z') {
-        channel.send(letter.toString())
-    }
-    channel.close()
-}
-
-
 fun main(): Unit = runBlocking<Unit> {
-    //    // the "classic FP" way of doing sequences
-//    for (i in fibonacci_infinite().take(10)) {
-//        println("fib: $i")
-//    }
-//
+    // the "classic FP" way of doing sequences
+    for (i in fibonacci_infinite().take(10)) {
+        println("fib: $i")
+    }
+
 //    val fsc = Channel<Int>() // akin to a Go Channel
 //    launch { fibonacci_send(10, fsc) } // akin to a Go Routine
 //    for (i in fsc) {
@@ -109,8 +72,4 @@ fun main(): Unit = runBlocking<Unit> {
 //        quitChannel.send(0)
 //    }
 //    fibonacci_select(sfsc, quitChannel)
-//
-//    counter_actor()
-//
-    sharing_a_channel()
 }
