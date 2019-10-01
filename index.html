@@ -328,7 +328,7 @@ fun something(aParam: String) = aParam + " is nice"</code></pre></div></div></se
 <section id="extension_functions"><h2>Extension Functions</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun String.makeNice() = this + " is nice"
 "Music".makeNice()
 
-// exactly the same as
+// compiles to the same as
 
 fun makeNice(str: String) = str + " is nice"
 makeNice("Music")</code></pre></div></div></section>
@@ -376,7 +376,9 @@ fun main() {
         threads.add(thread)
         thread.start()
     }
-    threads.forEach { thread -&gt; thread.join() } // make sure every thread has finished before returning
+
+    // make sure every thread has finished before returning
+    threads.forEach { thread -&gt; thread.join() }
 }
 
 fun main() {
@@ -451,7 +453,16 @@ fun main() {
 fun main() {
     processLauncher(5_000) { coroutine_IO_scaling(it) }
 }</code></pre></div></div></section>
-<section id="let_s_dissect_this_a_bit"><h2>Let&#8217;s dissect this a bit&#8230;&#8203;</h2></section>
+<section id="dispatchers"><h2>Dispatchers</h2><div class="imageblock" style=""><img src="images/dispatcher.svg" alt="dispatcher"></div></section>
+<section id="primary_dispatchers"><h2>Primary Dispatchers</h2></section>
+<section id="dispatchers_default"><h2>Dispatchers.Default</h2><div class="paragraph"><p>Appropriate choice for compute-intensive coroutines that consume CPU resources</p></div>
+<div class="paragraph"><p>Pool size is number of CPU cores</p></div></section>
+<section id="dispatchers_io"><h2>Dispatchers.IO</h2><div class="paragraph"><p>Uses a shared pool of on-demand created threads and is designed for offloading of IO-intensive <strong><em>blocking</em></strong>  operations
+(like file I/O and blocking socket I/O)</p></div></section>
+<section id="dispatchers_main"><h2>Dispatchers.Main</h2><div class="paragraph"><p>Used to put tasks on the UI thread on Android, Swing and JavaFX</p></div>
+<div class="paragraph smaller"><p>Confusingly, it does not put things on the &#8220;main&#8221; JVM thread</p></div></section>
+<section id="custom_dispatchers"><h2>&#8220;Custom&#8221; Dispatchers</h2><div class="ulist"><ul><li><p>Private thread pools can be created with <code>newSingleThreadContext()</code> and <code>newFixedThreadPoolContext(..)</code></p></li><li><p>An arbitrary <code>java.util.concurrent.Executor</code> can be converted to a dispatcher with <code>.asCoroutineDispatcher()</code></p></li></ul></div></section>
+<section id="let_s_dissect_the_example_a_bit"><h2>Let&#8217;s dissect the example a bit&#8230;&#8203;</h2></section>
 <section id="dissect_runblocking"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">                       runBlocking { /* "this" is a new CoroutineScope */ }</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">public fun &lt;T&gt; runBlocking(context: CoroutineContext = EmptyCoroutineContext,
                            block: suspend CoroutineScope.() -&gt; T): T {
@@ -459,7 +470,7 @@ fun main() {
     // ...</code></pre></div></div>
 <div class="paragraph"><p>Creates a new <code>CoroutineScope</code> attached to the current thread, and passes that as the <code>"this"</code> to the (no-arg) function</p></div>
 <div class="paragraph"><p>Acts as the &#8220;sync &#8594; async&#8221; barrier</p></div></section>
-<section id="coroutinescope"><h2>CoroutineScope</h2><div class="paragraph"><p>Keeps track of any child scopes</p></div>
+<section id="coroutinescope"><h2>CoroutineScope</h2><div class="paragraph"><p>Keeps track of coroutines</p></div>
 <div class="ulist"><ul><li><p>All coroutines must be created in the context of a CoroutineScope</p></li><li><p>Waits for all child scopes to complete before it completes</p></li><li><p>If you cancel the parent, all its children are cancelled</p></li></ul></div></section>
 <section id="dissect_launch"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">                       launch { /* "this" is a new CoroutineScope */ }</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">public fun CoroutineScope.launch(
@@ -474,11 +485,11 @@ fun main() {
 <section id="what_s_with_code_suspend_code"><h2>What&#8217;s with <code>suspend</code>?</h2></section>
 <section id="what_s_with_code_suspend_code_2"><div class="paragraph"><p>That&#8217;s what marks a function as being a coroutine</p></div></section>
 <section id="what_s_with_code_suspend_code_3"><div class="paragraph"><p>It tells the compiler to &#8220;deconstruct&#8221; the code in the function along certain &#8220;seams&#8221;</p></div>
-<div class="paragraph"><p>Conceptually it happens in ways very similar to what happens for an <code>async</code> function in JavaScript
-(though the implementation is significantly different)</p></div></section>
+<div class="paragraph"><p>Conceptually it happens in ways very similar to what happens for an <code>async</code> function in JavaScript</p></div>
+<div class="paragraph smaller"><p>(though the implementation is <strong><em>significantly</em></strong> different)</p></div></section>
 <section id="continuations"><h2>Continuations</h2><div class="paragraph"><p>At the byte-code level the function signature is rewritten to pass a Continuation in and out, and at those potential
 suspension points in the function it aggressively yields control of the current process</p></div>
-<div class="paragraph smaller"><p>OpenJDK has a proposal, <a href="https://cr.openjdk.java.net/~rpressler/loom/Loom-Proposal.html">Project Loom</a> to add this
+<div class="paragraph smaller"><p>OpenJDK has a proposal, <a href="https://cr.openjdk.java.net/~rpressler/loom/Loom-Proposal.html">Project Loom</a>, to add this
 kind of support explicitly to Java</p></div></section>
 <section id="continuations_2"><div class="paragraph"><p>This gives a &#8220;re-entrant&#8221; capability to the function</p></div>
 <div class="paragraph"><p>This provides an extremely light-weight way to not only &#8220;pause&#8221;
@@ -539,7 +550,7 @@ interface ReceiveChannel&lt;T&gt; {
 
 interface Channel&lt;E&gt; : SendChannel&lt;E&gt;, ReceiveChannel&lt;E&gt;</code></pre></div></div></section>
 <section id="fibonacci"><h2>Fibonacci</h2><div class="paragraph"><p>0,1,1,2,3,5,8,13,21,34,&#8230;&#8203;</p></div></section>
-<section id="classic_fp_style_sequence"><h2>Classic FP Style Sequence</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun CoroutineScope.fibonacci(): ReceiveChannel&lt;Int&gt; = produce {
+<section id="classic_fp_style_sequence"><h2>Classic FP-Style Sequence</h2><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun CoroutineScope.fibonacci(): ReceiveChannel&lt;Int&gt; = produce {
     var x = 0
     var y = 1
     while (true) {
@@ -600,7 +611,7 @@ fun main() = runBlocking {
     fibonacci(sfsc, quitChannel)
 }</code></pre></div></div></section>
 <section id="fanning_out"><h2>Fanning Out</h2><div class="imageblock right" style=""><img src="images/channel_fanout.png" alt="channel fanout"></div>
-<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">suspend fun sharing_a_channel() = coroutineScope {
+<div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun main() = runBlocking&lt;Unit&gt; {
     val channel = Channel&lt;String&gt;()
     for (i in 1..9)
         launch(Dispatchers.Default + CoroutineName("launch$i")) {
@@ -620,9 +631,9 @@ fun main() = runBlocking {
 object IncCounter : CounterMsg() // one-way message to increment counter
 class GetCounter(val response: CompletableDeferred&lt;Int&gt;) : CounterMsg() // a request with reply
 
-fun main() = runBlocking {
+fun main() = runBlocking&lt;Unit&gt; {
     val counterChannel: SendChannel&lt;CounterMsg&gt; = actor {
-        var counter = 0 // actor state
+        var counter = 0 // private actor state
         for (msg in this.channel) { // iterate over incoming messages
             when (msg) {
                 is IncCounter -&gt; counter++
@@ -642,7 +653,7 @@ fun main() = runBlocking {
 }</code></pre></div></div></section>
 <section id="flows"><h2>Flows</h2><div class="paragraph"><p>Flows are essentially Streams that use a Channel under the covers</p></div>
 <div class="paragraph"><p>By doing so, you get very light-weight &#8220;reactive programming&#8221; capabilities</p></div></section>
-<section id="complex_ish_flow_example"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun main(): Unit = runBlocking {
+<section id="complex_ish_flow_example"><div class="listingblock"><div class="content"><pre class="highlight"><code data-noescape class="kotlin language-kotlin">fun main() = runBlocking {
     val mainContext = coroutineContext + CoroutineName("main-fun")
 
     val baseFlow = flow {
@@ -665,9 +676,10 @@ fun main() = runBlocking {
 <div class="imageblock plain" style=""><img src="images/flowOn.png" alt="flowOn"></div></section>
 <section id="hopefully_that_gives_you_the_context_to_learn_more"><h2>Hopefully that gives you the context to learn more</h2></section>
 <section id="what_about"><h2>What About&#8230;&#8203; ?</h2><div class="ulist"><ul><li><p>error handling</p></li><li><p>integration with XXX (RxJava, Akka, Kafka, etc.)</p></li><li><p>cross-language support (e.g., JLS)</p></li><li><p>etc etc</p></li></ul></div></section>
-<section id="more_information"><h2>More Information</h2><div class="ulist twocol"><ul class="twocol"><li><p><a href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md" class="bare">https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md</a> - a little dated, the definitive guide to
-the reasoning and implementation behind Coroutines</p></li><li><p><a href="https://kotlinlang.org/docs/reference/coroutines/channels.html" class="bare">https://kotlinlang.org/docs/reference/coroutines/channels.html</a></p></li><li><p><a href="https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f" class="bare">https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f</a></p></li><li><p><a href="https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9" class="bare">https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9</a></p></li><li><p><a href="https://kotlinexpertise.com/kotlin-coroutines-concurrency/" class="bare">https://kotlinexpertise.com/kotlin-coroutines-concurrency/</a></p></li><li><p><a href="https://www.youtube.com/watch?v=a3agLJQ6vt8&amp;t=1442s">Kotlin Coroutines In Practice video</a></p></li></ul></div></section>
-<section id="images"><h2>Images</h2><div class="ulist"><ul><li><p><a href="https://www.vecteezy.com/vector-art/138681-cute-bright-buho-icons">Cute Bright Buho Icons</a></p></li><li><p><a href="https://pixabay.com/photos/smartphone-samsung-galaxy-s4-mini-325484/">Samsung Galaxy S4</a></p></li><li><p><a href="https://en.wikipedia.org/wiki/File:Windows_3.11_workspace.png">Windows 3.11 screenshot</a></p></li></ul></div></section></div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/js/head.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/js/reveal.js"></script><script>// See https://github.com/hakimel/reveal.js#configuration for a full list of configuration options
+<section id="more_information"><h2>More Information</h2><div class="ulist smaller"><ul><li><p><a href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md">Coroutines Proposal</a> - a little dated,
+the definitive guide to the reasoning and implementation behind Coroutines</p></li><li><p><a href="https://kotlinlang.org/docs/reference/coroutines/channels.html">Channels Reference</a></p></li><li><p><a href="https://proandroiddev.com/kotlin-coroutines-channels-csp-android-db441400965f">Kotlin: Diving in to Coroutines
+and Channels</a> - well written article using the classic barista example</p></li><li><p><a href="https://medium.com/@elizarov/cold-flows-hot-channels-d74769805f9">Roman Elizarov explaining the design of Flows</a></p></li><li><p><a href="https://www.youtube.com/watch?v=a3agLJQ6vt8&amp;t=1442s">Kotlin Coroutines In Practice video by Roman Elizarov</a></p></li></ul></div></section>
+<section id="image_credits"><h2>Image Credits</h2><div class="ulist smaller"><ul><li><p><a href="https://www.vecteezy.com/vector-art/138681-cute-bright-buho-icons">Cute Bright Buho Icons</a></p></li><li><p><a href="https://pixabay.com/photos/smartphone-samsung-galaxy-s4-mini-325484/">Samsung Galaxy S4</a></p></li><li><p><a href="https://en.wikipedia.org/wiki/File:Windows_3.11_workspace.png">Windows 3.11 screenshot</a></p></li></ul></div></section></div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/lib/js/head.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.6.0/js/reveal.js"></script><script>// See https://github.com/hakimel/reveal.js#configuration for a full list of configuration options
 Reveal.initialize({
   // Display controls in the bottom right corner
   controls: true,
